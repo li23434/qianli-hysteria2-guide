@@ -34,6 +34,25 @@ jobs:
         run: |
           bash -n install.sh
           bash -n tests/smoke.sh
-          shellcheck --severity=warning install.sh tests/smoke.sh
+          bash -n tests/integration.sh
+          bash -n tests/systemd-e2e.sh
+          shellcheck --severity=warning install.sh tests/smoke.sh tests/integration.sh tests/systemd-e2e.sh
       - name: Isolated helpers and dry-run
         run: bash tests/smoke.sh
+      - name: Isolated lifecycle and rollback
+        run: bash tests/integration.sh
+
+  actual-systemd-install:
+    needs: isolated-checks
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Actual install, generated client handshake, update and uninstall
+        run: sudo --preserve-env=GITHUB_ACTIONS,RUNNER_ENVIRONMENT,RUNNER_TEMP bash tests/systemd-e2e.sh
