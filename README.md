@@ -157,7 +157,7 @@ sudo bash qianli-hy2-install.sh install --cert-mode acme --domain hy2.example.co
 
 ## 二进制来源、更新与回滚
 
-脚本通过官方 GitHub 仓库 ID `257434373` 获取 Release 元数据，选择对应架构的 `hysteria-linux-amd64` 或 `hysteria-linux-arm64` 资产，再校验官方元数据提供的 SHA256、ELF 架构和程序版本。缺少有效摘要或校验不匹配时中止，不跳过检查，也不执行任何外部安装器。
+脚本通过官方 GitHub 仓库 ID `257434373` 获取 Release 元数据，选择对应架构的 `hysteria-linux-amd64` 或 `hysteria-linux-arm64` 资产，校验官方元数据提供的 SHA256 与 ELF 架构，再执行 `version` 命令确认程序可启动。缺少有效摘要或校验不匹配时中止，不跳过检查，也不执行任何外部安装器。
 
 更新保留配置和证书，只替换官方二进制。写入新程序或更新前正在运行的服务启动检查失败时，脚本尝试恢复旧程序；恢复本身失败也会报错，需要查看日志。更新前未运行的服务，更新后不会擅自启动。成功更新时旧程序保存在同一目录的 `hysteria.previous`。
 
@@ -187,11 +187,14 @@ sudo qianli-hy2 uninstall --purge
 
 ```bash
 bash -n install.sh
-shellcheck --severity=warning install.sh tests/smoke.sh
+shellcheck --severity=warning install.sh tests/smoke.sh tests/integration.sh tests/systemd-e2e.sh
 bash tests/smoke.sh
+bash tests/integration.sh
 ```
 
-隔离测试只调用参数校验、发布元数据选择、临时目录中的配置生成和 dry-run，不执行服务器安装。自动检查及每次运行的实际结果见 [GitHub Actions](https://github.com/li23434/qianli-hysteria2-guide/actions/workflows/verify.yml)。Linux 集成验收应覆盖真实 systemd 安装、客户端本地代理握手、更新与卸载；只有对应工作流成功的项目才算通过，不能从隔离测试推断集成成功。
+`smoke.sh` 检查参数、发布元数据、临时配置与 dry-run。`integration.sh` 把全部安装路径重定位到临时目录，以模拟的系统服务和二进制检查安装/更新/失败回滚/卸载，不改宿主服务。
+
+`systemd-e2e.sh` 只允许在一次性 GitHub-hosted runner 上以 root 运行：在 Ubuntu 22.04 / 24.04 amd64 实际安装官方二进制与 systemd 服务，以生成的自签客户端配置完成认证及 HTTP/SOCKS5 本地回环请求，然后检查同版本重新下载更新、停服更新、保留卸载与 purge。它不是跨版本兼容性、ACME 公网签发、Debian/arm64 或用户 VPS 公网链路测试。自动检查及实际运行结果见 [GitHub Actions](https://github.com/li23434/qianli-hysteria2-guide/actions/workflows/verify.yml)，只有对应工作流成功的项目才算通过。
 
 开发检查与真实服务器验收是两回事。语法、帮助/参数解析、`--dry-run`、隔离样例中的配置生成、版本元数据校验或故障分支测试，只能验证这些对应代码路径，不能替代真实 systemd、ACME、UDP 网络与客户端端到端连接。
 
