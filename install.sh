@@ -4,7 +4,7 @@
 set -Eeuo pipefail
 umask 077
 
-readonly QIANLI_VERSION='1.0.0'
+readonly QIANLI_VERSION='1.0.1'
 readonly REPOSITORY_ID='257434373'
 readonly API_ROOT="https://api.github.com/repositories/${REPOSITORY_ID}"
 readonly UNIT='qianli-hysteria-server.service'
@@ -378,15 +378,26 @@ UNIT
 }
 
 wait_for_active() {
-  local attempt
-  for attempt in {1..15}; do
-    if systemctl is-active --quiet "$UNIT"; then
-      sleep 1
-      systemctl is-active --quiet "$UNIT" && return 0
+  # Type=simple is active before TLS/ACME initialization finishes. Only the
+  # ready message from this exact systemd invocation confirms server startup.
+  local attempt invocation current state
+  invocation=$(systemctl show --property=InvocationID --value "$UNIT") || return 1
+  [[ $invocation =~ ^[a-fA-F0-9]{32}$ ]] || return 1
+  for ((attempt=1; attempt<=300; attempt++)); do
+    current=$(systemctl show --property=InvocationID --value "$UNIT") || return 1
+    [[ $current == "$invocation" ]] || return 1
+    state=$(systemctl show --property=ActiveState --value "$UNIT") || return 1
+    case "$state" in active|activating) ;; *) return 1 ;; esac
+    if [[ $state == active ]] && journalctl --quiet --no-pager --output=cat \
+      --unit "$UNIT" "_SYSTEMD_INVOCATION_ID=$invocation" | grep -F 'server up and running' >/dev/null; then
+      # Guard against a crash/restart while reading the journal.
+      current=$(systemctl show --property=InvocationID --value "$UNIT") || return 1
+      [[ $current == "$invocation" ]] && systemctl is-active --quiet "$UNIT" && return 0
+      return 1
     fi
-    if (( attempt == 15 )); then return 1; fi
     sleep 1
   done
+  say '等待本次服务就绪超时（300 秒），未把进程 active 当作安装成功。' >&2
   return 1
 }
 
@@ -506,6 +517,8 @@ update_server() {
   confirm "更新官方 Hysteria 程序到 $RELEASE，并保留配置和证书？"
   install_dependencies
   acquire_lock
+  require_managed
+  [[ -f $BINARY && -f $UNIT_FILE ]] || die '等待锁期间安装已改变，未进行更新。'
   create_work_dir
   fetch_binary
   local previous_state=inactive
@@ -542,6 +555,7 @@ uninstall_server() {
   else confirm '卸载 qianli 程序和服务，保留配置、口令与证书？'; fi
   command -v flock >/dev/null || die '需要 flock，未进行卸载。'
   acquire_lock
+  require_managed
   if [[ -f $UNIT_FILE ]]; then systemctl disable --now "$UNIT"; fi
   rm -f -- "$UNIT_FILE" "$MANAGER"
   systemctl daemon-reload
