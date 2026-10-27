@@ -97,7 +97,10 @@ printf 'Phase: inactive-service update does not silently start it\n'
 stop_client
 qianli-hy2 stop
 qianli-hy2 update --release "$RELEASE" --yes
-! systemctl is-active --quiet "$UNIT"
+if systemctl is-active --quiet "$UNIT"; then
+  printf 'Inactive update unexpectedly started the service.\n' >&2
+  exit 1
+fi
 qianli-hy2 start
 start_client
 check_proxy
