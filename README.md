@@ -84,6 +84,32 @@ sudo bash qianli-hy2-install.sh install --cert-mode self-signed --host 203.0.113
 
 生成的本地入口为 `127.0.0.1:12808`（SOCKS5）和 `127.0.0.1:12809`（HTTP）。服务保持运行不等于客户端已经连通，仍需从客户端做一次实际请求验证。
 
+### 在自己的电脑启动客户端
+
+在 VPS 上执行 `sudo qianli-hy2 show-client`，把输出私有保存为自己电脑上的 `client.yaml`，不要把服务端 `config.yaml` 当作客户端配置。
+
+从 [Hysteria 官方 Release](https://github.com/HyNetworks/hysteria/releases) 准备与自己电脑系统和架构对应的 Hysteria 2 客户端。下面 Linux/macOS 示例假设程序已命名为 `hysteria` 并在 PATH 中；Windows 示例假设将下载的程序命名为 `hysteria.exe`，与 `client.yaml` 放在同一个目录。
+
+Linux / macOS：
+
+```bash
+hysteria client --config ./client.yaml
+```
+
+Windows PowerShell：
+
+```powershell
+.\hysteria.exe client --config .\client.yaml
+```
+
+保持客户端运行，另开同一台电脑的终端测试：
+
+```bash
+curl --proxy http://127.0.0.1:12809 --noproxy localhost,127.0.0.1 --connect-timeout 10 --max-time 20 --fail --show-error https://example.com/
+```
+
+Windows PowerShell 把上述 `curl` 改为 `curl.exe`。这里连接的是自己电脑上已启动的客户端，不是在 VPS 上直接访问不存在的本地代理。请求成功才说明这一条代理链路完成了应用层验证；不是速度测试或公网 UDP 可达性的独立证明。
+
 ## 指定参数与只看执行计划
 
 完整查看命令帮助：
@@ -135,6 +161,8 @@ sudo bash qianli-hy2-install.sh install --cert-mode acme --domain hy2.example.co
 
 更新保留配置和证书，只替换官方二进制。写入新程序或更新前正在运行的服务启动检查失败时，脚本尝试恢复旧程序；恢复本身失败也会报错，需要查看日志。更新前未运行的服务，更新后不会擅自启动。成功更新时旧程序保存在同一目录的 `hysteria.previous`。
 
+服务检查应等待当前 systemd 启动实例的 Hysteria 就绪日志，不只判断 `active`。ACME 申请可能需要等待，最长等待 300 秒；即使服务已就绪，仍要按上面的客户端步骤验证真实连接。
+
 这些是当前代码的处理逻辑，不是对所有网络、系统与故障场景的零中断承诺。更新前仍应把有效私有配置保存在自己控制的备份位置，不要上传真实口令或私钥。
 
 ## 卸载与完整清理
@@ -163,7 +191,7 @@ shellcheck --severity=warning install.sh tests/smoke.sh
 bash tests/smoke.sh
 ```
 
-隔离测试只调用参数校验、发布元数据选择、临时目录中的配置生成和 dry-run，不执行服务器安装。自动检查见 [GitHub Actions](https://github.com/li23434/qianli-hysteria2-guide/actions/workflows/verify.yml)。
+隔离测试只调用参数校验、发布元数据选择、临时目录中的配置生成和 dry-run，不执行服务器安装。自动检查及每次运行的实际结果见 [GitHub Actions](https://github.com/li23434/qianli-hysteria2-guide/actions/workflows/verify.yml)。Linux 集成验收应覆盖真实 systemd 安装、客户端本地代理握手、更新与卸载；只有对应工作流成功的项目才算通过，不能从隔离测试推断集成成功。
 
 开发检查与真实服务器验收是两回事。语法、帮助/参数解析、`--dry-run`、隔离样例中的配置生成、版本元数据校验或故障分支测试，只能验证这些对应代码路径，不能替代真实 systemd、ACME、UDP 网络与客户端端到端连接。
 
