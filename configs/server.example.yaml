@@ -1,5 +1,5 @@
-# qianli tutorial example — replace all placeholders before deployment.
-# Alternative official-install route only; do not overlay a third-party script config.
+# qianli-hy2 reference only; the installer generates the real private config.
+# Do not replace a working configuration with these public placeholders.
 listen: :443
 
 acme:
@@ -7,6 +7,8 @@ acme:
     - hy2.example.com
   email: admin@example.com
   ca: letsencrypt
+  type: http
+  dir: /var/lib/qianli-hysteria/acme
 
 auth:
   type: password
