@@ -1,0 +1,39 @@
+name: Installer checks
+
+on:
+  push:
+    paths:
+      - install.sh
+      - tests/**
+      - .github/workflows/verify.yml
+  pull_request:
+    paths:
+      - install.sh
+      - tests/**
+      - .github/workflows/verify.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  isolated-checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Prepare static analyzer
+        run: |
+          if ! command -v shellcheck >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y shellcheck
+          fi
+      - name: Bash syntax and ShellCheck
+        run: |
+          bash -n install.sh
+          bash -n tests/smoke.sh
+          shellcheck --severity=warning install.sh tests/smoke.sh
+      - name: Isolated helpers and dry-run
+        run: bash tests/smoke.sh
