@@ -1,0 +1,11 @@
+.tools/
+.test-output/
+*.log
+*.zip
+*.tar.gz
+client.yaml
+config.yaml
+*.key
+*.pem
+.env
+.env.*
