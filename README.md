@@ -1,205 +1,178 @@
-# qianli 的 Hysteria 2 部署工作单
+# qianli Hysteria 2 一键部署脚本
 
-作者：**qianli**  
-资料核对：2026-10-27
+作者与维护：**qianli**  
+脚本入口：[install.sh](install.sh)
 
-装好一个程序，只完成了部署的一小部分。这份工作单的终点是：能解释服务器用了什么配置，拿出一条确实经过本地代理的请求，并知道下次故障从哪里查。
+这是 qianli 独立编写的 Bash 安装与管理脚本，不是原教程的改名版，也不是调用其他安装器的包装脚本。它自行准备依赖、下载并校验官方 Hysteria 二进制、生成配置和独立 systemd 服务，再提供更新、状态、日志、客户端配置与卸载入口。
 
-主线采用**官方安装器、可信证书、单 UDP 端口**。先按工作单填自己的参数，再完成四项验收。不比较速度，不堆叠调优，也不照搬某个平台的客户端界面。文末另留第三方一键入口，供需要交互菜单的人自行选择。
+Hysteria 协议与程序仍来自 [官方项目 HyNetworks/hysteria](https://github.com/HyNetworks/hysteria)。本仓库不把官方软件称为 qianli 自研，也不附带其他项目的安装脚本副本。
 
-本文由 qianli 独立整理，示例没有在用户 VPS 上执行。仓库只存教程和脱敏配置，不包含第三方安装脚本副本。
+## 一行打开安装菜单
 
-## 开始前，填完这张单
-
-请在自己的私有记录中填写“我的值”，不要将真实口令、私钥或完整节点链接提交到这个仓库。
-
-| 项目 | 本文示例 | 我的值 |
-| --- | --- | --- |
-| VPS 系统 / 架构 | systemd Linux / 按实际架构选程序 | 待填 |
-| 公网 IPv4 / IPv6 | 不提供真实地址 | 待填 |
-| 代理子域名 | `hy2.example.com` | 待填 |
-| Hysteria 入站 | `443/UDP` | 待填 |
-| 证书获取 / 续期 | Hysteria 内置 ACME | 待填 |
-| ACME 联系邮箱 | `admin@example.com` | 待填 |
-| 认证口令 | `REPLACE_WITH_YOUR_OWN_LONG_RANDOM_PASSWORD` | 私密保存 |
-| 本地 SOCKS5 入口 | `127.0.0.1:12808` | 待填 |
-| 本地 HTTP 入口 | `127.0.0.1:12809` | 待填 |
-| 已有网站 / 转发规则 | 先盘点，不能假定为空 | 待填 |
-| 恢复入口 | 云控制台或其他管理通道 | 待填 |
-
-`hy2.example.com` 只表示一个待替换的域名。注册了博客域名，并不意味着它的代理子域名已经解析到 VPS。只有确实可用的 IPv6 才填写对应的 AAAA 记录。
-
-这张单里有三种端口，别混在一起：VPS 上用于传输的 UDP 端口、证书验证可能用到的 TCP 端口，以及只在客户端本机监听的 HTTP/SOCKS5 端口。后两者不是替代关系。
-
-## 把主线配置落到自己的机器
-
-### 先确认运行条件
-
-在 VPS 的 SSH 终端检查环境和已有监听：
+在自己 VPS 的 **root SSH 会话**中运行：
 
 ```bash
-cat /etc/os-release
-uname -m
-systemctl --version
-ss -lntup
+curl -fsSL https://raw.githubusercontent.com/li23434/qianli-hysteria2-guide/main/install.sh -o qianli-hy2-install.sh && bash qianli-hy2-install.sh
 ```
 
-对照 [官方安装器要求](https://v2.hysteria.network/docs/getting-started/Server-Installation-Script/#environment-requirements)，确认 systemd、Bash、curl 等工具可用。安全组和主机防火墙应允许工作单填写的 UDP 入站端口；是否放行过 TCP 443 不能代替这一步。
+这条命令先把脚本保存为文件，再打开菜单。选择 `1` 安装，按提示填写证书方式、域名或 IPv4 地址、联系邮箱和 UDP 端口，最后确认。端口默认是 **443/UDP**，不是随机端口。
 
-### 程序与配置分开处理
-
-官方下载入口先取到本地检查，再运行：
+无 root 登录时，先下载同一个文件，再使用：
 
 ```bash
-curl -fsSL https://get.hy2.sh/ -o install-hysteria.sh
-less install-hysteria.sh
-sudo bash install-hysteria.sh
+sudo bash qianli-hy2-install.sh
 ```
 
-安装器负责程序和 systemd 服务，不会替你完成一份适合当前环境的服务端配置。
+使用文件式入口，不要改成 `curl ... | bash`：菜单需要交互终端，安装时也会把当前脚本保存为本地管理命令。希望先看清楚内容，可以在运行前执行 `less qianli-hy2-install.sh`。
 
-把 [服务端示例](configs/server.example.yaml) 的内容保存到 VPS 的 `/etc/hysteria/config.yaml`，填写工作单中的域名、邮箱和独立长随机口令。这个示例明确监听 `:443`，使用内置 ACME；若改端口，两端与防火墙规则必须一起改。
+## 运行条件
 
-证书获取依赖域名指向和所选验证方式。如果网站已经占用了相关 TCP 端口，先核对 [官方 TLS / ACME 配置](https://v2.hysteria.network/docs/advanced/Full-Server-Config/#tls)，决定合适的验证方式，不要为了套示例直接停掉网站。已有证书由别的程序续期时，可以用 `tls.cert`、`tls.key` 替代 `acme`，但两段不能并存。证书路径与服务用户的读取权限也要对应。
+- Debian 或 Ubuntu，且当前由 systemd 管理服务
+- 64 位 `amd64` 或 `arm64` 架构
+- SSH 登录后能使用 Bash；下载入口需要 curl
+- VPS 能访问 GitHub API 和官方 Release 下载地址
+- 操作前确认已有网站、代理服务与端口占用
 
-接着在**客户端所在的设备**保存 [客户端示例](configs/client.example.yaml)，命名为 `client.yaml`，把地址和口令改成相同的一组值。它是官方 Hysteria 客户端格式，不是所有图形客户端的通用导入文件。本例保留正常的可信证书校验，没有 `insecure: true`。
+脚本会按缺项准备 `ca-certificates`、`curl`、`openssl`、`python3`、`iproute2`、`util-linux`、`passwd` 等系统工具。实际安装与管理需要 root 权限；`--help`、`--version` 和 `--dry-run` 不需要 root 或 Linux。
 
-启动命令中的程序文件名要与实际下载的架构版本对应，例如：
+脚本**不修改 DNS、SSH、Caddy、全局防火墙或已有的官方 Hysteria 配置，不清空 iptables 规则**。因此端口放行、域名指向和公网可达性仍由你确认；它不会为了安装而停止现有网站。
+
+## 两种证书方式
+
+### 默认：域名与 ACME 可信证书
+
+示例域名和邮箱都需要替换：
 
 ```bash
-./hysteria-linux-amd64 client -c client.yaml
+sudo bash qianli-hy2-install.sh install --cert-mode acme --domain hy2.example.com --email admin@example.com --port 443
 ```
 
-本地监听地址保持 `127.0.0.1`。启动客户端不会自动改变整台设备的代理设置；下面只让 curl 的测试请求显式使用这两个本地入口。
+当前脚本使用 **ACME HTTP 验证**。域名应指向 VPS，公网 **80/TCP** 必须可达且没有其他程序监听；传输所用的 **443/UDP** 则是另一条需要放行的规则。80/TCP 已被网站占用时，脚本会中止，不会停止网站。
 
-## 四项验收：每一项都留一条证据
+该模式生成正常校验证书的客户端配置。不要把示例域名理解为已经替你创建了 DNS 记录。
 
-### 验收一：入口确实指向这台服务器
+### 可选：自签证书与固定指纹
 
-**要留下的证据**：域名当前的 A/AAAA 结果、工作单中的公网地址、实际放行的 UDP 端口三者能够对应。
-
-可以使用 DNS 管理控制台或自己的查询工具核对。普通网站 CDN 的 HTTP 代理不等于该 UDP 入口；不要把“浏览器能打开域名”当作这一项已经通过。
-
-**不通过就停在这里**：先修正错误记录、失效的 AAAA 或端口规则，不重装程序。
-
-### 验收二：服务读到了这份配置
-
-在 VPS 上启动并查看状态与日志：
+没有可用域名，或者想自行选择自签方式时：
 
 ```bash
-sudo systemctl start hysteria-server.service
-sudo systemctl status hysteria-server.service
-sudo journalctl --no-pager -e -u hysteria-server.service
+sudo bash qianli-hy2-install.sh install --cert-mode self-signed --host 203.0.113.10 --port 443
 ```
 
-**要留下的证据**：服务持续运行，日志中没有配置解析、证书申请、文件权限或端口绑定错误。仅有安装器的“完成”提示不算证据。
+`203.0.113.10` 是示例地址，必须换成自己的 VPS 地址。当前接受 DNS 名称或 IPv4，**不接受直接填写 IPv6 地址**。
 
-**不通过就停在这里**：先处理日志出现的第一条有效错误。修改后重启，再看同一组日志，不同时改多项配置。
+脚本生成带对应 SAN 的自签证书。导出的客户端同时包含 `tls.insecure: true`、`tls.sni` 和非空的 **`tls.pinSHA256`**：信任链验证由固定证书指纹替代，不能只保留 `insecure: true` 而删除指纹。证书有效期为 365 天；更换证书后，需要核对并同步新的客户端指纹。[官方客户端 TLS 说明](https://v2.hysteria.network/docs/getting-started/Client/#tls)
 
-### 验收三：客户端的地址、认证与证书吻合
+## 安装完成后怎样管理
 
-保持客户端运行，核对它使用的是工作单中的域名和 UDP 端口，且认证口令与服务端一致。
+安装成功后，使用保存到系统里的 `qianli-hy2`，不必每次重新下载脚本：
 
-**要留下的证据**：客户端出现成功连接的日志，没有证书或认证错误，本地配置的 HTTP/SOCKS5 入口可用。日志本身可能包含完整节点链接，公开分享时只保留错误类型和必要上下文。
-
-**不通过就停在这里**：超时优先查 UDP 路径；认证失败核对两端口令；证书错误核对域名、证书信任链和有效期。不要通过关闭校验把错误掩盖掉。
-
-### 验收四：一个 HTTPS 请求确实经过本地入口
-
-以下命令在**运行客户端的同一台电脑**执行，不是在 VPS 的 SSH 终端执行。Windows PowerShell 请把命令开头的 `curl` 写成 `curl.exe`，避免被 `Invoke-WebRequest` 别名接管；Linux / macOS 使用 `curl`。先保留客户端终端，再开一个终端测试。HTTP 和 SOCKS5 两条按本次使用的入口任选一条，独立执行，不合并参数。
-
-通过本地 HTTP 代理发起请求：
-
-```bash
-curl --proxy http://127.0.0.1:12809 --noproxy localhost,127.0.0.1 --connect-timeout 10 --max-time 20 --fail --silent --show-error --write-out "\nHTTP=%{http_code}\n" https://example.com/
-```
-
-如果本次使用本地 SOCKS5 入口，选择下面这条做同一项检查：
-
-```bash
-curl --proxy socks5h://127.0.0.1:12808 --noproxy localhost,127.0.0.1 --connect-timeout 10 --max-time 20 --fail --silent --show-error --write-out "\nHTTP=%{http_code}\n" https://example.com/
-```
-
-`socks5h` 让目标域名经 SOCKS5 代理解析；`--noproxy` 在这两条命令中只排除回环目标，避免环境变量里的其他豁免规则让 `example.com` 绕开指定代理。命令保留 HTTPS 证书校验，不使用 `-k`。相关选项含义见 [curl 官方手册](https://curl.se/docs/manpage.html)。
-
-**要留下的证据**：收到目标网页内容，结尾有正常的目标 HTTP 状态，并且没有 curl 错误。`HTTP=000`、连接本地端口失败或超时都不算通过。若收到 4xx/5xx，应区分目标网站响应与链路失败，不能一律归因于 VPS。
-
-这项验收验证的是“指定本地代理承载了一次 HTTPS 请求”，不是直接探测服务器 UDP 端口。它也不代表系统里所有应用都已走代理，更不构成速度、稳定性或隐私效果的测评。
-
-## 排错时，用证据卡而不是猜测
-
-每次只填一张卡，修正后重新跑对应的验收，不从头重装：
-
-```text
-未通过的验收编号：
-发生时间：
-实际执行的命令（去掉秘密）：
-首个错误类型 / 关键日志：
-本次只改动了什么：
-复测结果：
-```
-
-| 手里的证据 | 下一步只查这一层 |
+| 操作 | 命令 |
 | --- | --- |
-| DNS 结果与工作单不符 | 权威 DNS 记录、记录名称、失效的 AAAA |
-| 服务启动立即退出 | 日志首错、YAML 缩进、路径、权限或监听冲突 |
-| 客户端认证失败 | 当前实际加载的配置与两端口令 |
-| 客户端证书错误 | 连接域名、证书域名、信任链、到期时间 |
-| curl 连不上 `127.0.0.1` | 客户端是否运行、本地监听端口是否与命令一致 |
-| 本地端口存在但请求超时 | 客户端连接日志、UDP 入站、服务器出口与目标可达性 |
-| 只有某个应用不能访问 | 该应用有没有明确使用已验收的本地代理入口 |
+| 打开菜单 | `sudo qianli-hy2` |
+| 查看服务状态 | `sudo qianli-hy2 status` |
+| 查看最近日志 | `sudo qianli-hy2 logs` |
+| 启动 / 停止 / 重启 | `sudo qianli-hy2 start` / `sudo qianli-hy2 stop` / `sudo qianli-hy2 restart` |
+| 显示私有客户端 YAML | `sudo qianli-hy2 show-client` |
+| 更新到官方最新版本 | `sudo qianli-hy2 update` |
+| 更新到指定官方版本 | `sudo qianli-hy2 update --release app/v2.13.0` |
+| 卸载程序与服务，保留私有资料 | `sudo qianli-hy2 uninstall` |
 
-分享证据卡前，移除口令、私钥、完整订阅/节点链接与不必要的个人网络信息。保留错误类型、时间和脱敏后的字段关系就够了。
+这里的 `app/v2.13.0` 是版本参数格式示例，不代表永久推荐版本。**`--release` 选择 Hysteria 程序版本，`--version` 只显示 qianli 安装脚本自身版本。**
 
-## 维护：留下能恢复的东西，而不是一堆截图
+`show-client` 当前只输出 YAML，不生成订阅服务或可分享的节点 URI。输出里有真实认证口令，只复制到自己的客户端，不要发到公开仓库、Issue 或截图里。该文件使用官方 Hysteria 客户端配置格式，并非所有图形客户端通用的导入格式。
 
-四项验收通过后，再设置服务器开机启动：
+生成的本地入口为 `127.0.0.1:12808`（SOCKS5）和 `127.0.0.1:12809`（HTTP）。服务保持运行不等于客户端已经连通，仍需从客户端做一次实际请求验证。
 
-```bash
-sudo systemctl enable hysteria-server.service
-```
+## 指定参数与只看执行计划
 
-更改配置后，使用 `sudo systemctl restart hysteria-server.service`，重新查看状态与日志，并至少复测一次本地代理请求。
-
-把记录分成两份：
-
-- **私有备份**：当前有效配置、口令、证书续期安排、必要的恢复资料，存入自己控制的私密位置
-- **可提交仓库的资料**：本文工作单的空表、示例域名、占位口令、脱敏证据卡和变更说明
-
-不要把 `/etc/hysteria/` 或客户端配置目录整个打包推到 GitHub；其中可能含真实口令和私钥。升级前记录版本与有效配置，阅读对应版本变更，升级后重新验收。这里不提供会把私密文件自动上传的备份命令。
-
-## 可选：第三方交互菜单入口
-
-如果确定要用菜单式安装，可以选择 [flame1ce/hysteria2-install](https://github.com/flame1ce/hysteria2-install)。它与上面的官方主线是**替代关系**，不要在同一套已运行配置上叠加执行。
-
-以 Debian / Ubuntu 的 `root` 会话为例，先准备 `ca-certificates`、`wget` 等工具，再取回脚本阅读：
+完整查看命令帮助：
 
 ```bash
-wget -O hysteria.sh https://raw.githubusercontent.com/flame1ce/hysteria2-install/main/hysteria2-install-main/hy2/hysteria.sh
-less hysteria.sh
-bash hysteria.sh
+bash qianli-hy2-install.sh --help
+bash qianli-hy2-install.sh --version
 ```
 
-已经检查过当前源码，需要一行入口时：
+不下载、不准备依赖、不创建系统目录、不生成口令，也不启动服务，只打印计划：
 
 ```bash
-wget -O hysteria.sh https://raw.githubusercontent.com/flame1ce/hysteria2-install/main/hysteria2-install-main/hy2/hysteria.sh && bash hysteria.sh
+bash qianli-hy2-install.sh install --domain hy2.example.com --email admin@example.com --port 443 --dry-run
 ```
 
-主菜单 `1` 为安装；端口留空会随机取 `2000–65535`，证书菜单默认自签。当前源码在端口设置和卸载时会清空 IPv4 NAT `PREROUTING`；自签分支对证书与私钥使用 `777` 权限；导出的客户端包含 `insecure: true`；修改伪装站涉及 `/etc/caddy/Caddyfile`。这些行为必须与自己的已有服务、转发规则和证书方案一起判断。
+`--dry-run` 不是远端连通性测试，也不能证明 DNS、证书验证或真实 VPS 安装将会成功。
 
-采用它的导出参数后，不要混用本仓库的可信证书配置。自签连接的信任方式应另按 [官方客户端 TLS 文档](https://v2.hysteria.network/docs/getting-started/Client/#tls) 处理。节点在自己客户端里的显示名称可以写成 `qianli`，不代表上游脚本变成了 qianli 自研程序。
+需要无交互安装时，完整提供参数并显式加上 `--yes`：
 
-这个入口直接指向原项目，没有镜像或重新署名它的安装脚本；`main` 上的内容可能变化，运行前需重新检查。
+```bash
+sudo bash qianli-hy2-install.sh install --cert-mode acme --domain hy2.example.com --email admin@example.com --port 443 --yes
+```
 
-## 资料与归属
+参数可以放在命令前后；一次只执行一个管理命令。
 
-- [Hysteria 官方安装器与服务管理](https://v2.hysteria.network/docs/getting-started/Server-Installation-Script/)
-- [Hysteria 官方服务端入门](https://v2.hysteria.network/docs/getting-started/Server/)
-- [完整服务端配置](https://v2.hysteria.network/docs/advanced/Full-Server-Config/)
-- [Hysteria 官方客户端入门](https://v2.hysteria.network/docs/getting-started/Client/)
-- [curl 官方选项手册](https://curl.se/docs/manpage.html)
-- [第三方脚本项目 · flame1ce/hysteria2-install](https://github.com/flame1ce/hysteria2-install)
-- [参考教程](https://haiy.space/posts/hysteria-2-vps)：选题和历史脚本入口参考，未复制其图片与正文
+## 脚本创建了哪些文件
 
-教程撰写与整理：**qianli**。协议、软件及第三方安装器分别属于原项目。本文采用独立的工作单、验收和维护结构，不是原参考文章的改名版本。
+| 用途 | 专属位置 |
+| --- | --- |
+| 官方 Hysteria 可执行文件 | `/usr/local/lib/qianli-hysteria/hysteria` |
+| 本地管理入口 | `/usr/local/sbin/qianli-hy2` |
+| 服务端配置 | `/etc/qianli-hysteria/config.yaml` |
+| 私有客户端配置 | `/etc/qianli-hysteria/client.yaml` |
+| 安装版本与摘要记录 | `/etc/qianli-hysteria/install.json` |
+| 自签证书 / 私钥（仅该模式） | `/etc/qianli-hysteria/server.crt` / `server.key` |
+| 运行状态与 ACME 缓存 | `/var/lib/qianli-hysteria/` |
+| 独立 systemd 服务 | `qianli-hysteria-server.service` |
+| 服务单元文件 | `/etc/systemd/system/qianli-hysteria-server.service` |
+
+服务使用专用的非登录系统用户 `qianli-hysteria`，不以 root 身份长期运行。客户端配置仅 root 可读；服务端配置与自签私钥只向必要的服务用户开放读取权限，不采用 `777`。
+
+已有安装或专属路径冲突时，脚本会拒绝覆盖。不要把旧教程的 `/etc/hysteria/` 配置直接复制过来覆盖本项目文件。
+
+默认卸载后保留的配置不会被新的安装直接覆盖。当前不提供自动恢复重装；需要重装时，先私有备份，再明确清理并安装。
+
+## 二进制来源、更新与回滚
+
+脚本通过官方 GitHub 仓库 ID `257434373` 获取 Release 元数据，选择对应架构的 `hysteria-linux-amd64` 或 `hysteria-linux-arm64` 资产，再校验官方元数据提供的 SHA256、ELF 架构和程序版本。缺少有效摘要或校验不匹配时中止，不跳过检查，也不执行任何外部安装器。
+
+更新保留配置和证书，只替换官方二进制。写入新程序或更新前正在运行的服务启动检查失败时，脚本尝试恢复旧程序；恢复本身失败也会报错，需要查看日志。更新前未运行的服务，更新后不会擅自启动。成功更新时旧程序保存在同一目录的 `hysteria.previous`。
+
+这些是当前代码的处理逻辑，不是对所有网络、系统与故障场景的零中断承诺。更新前仍应把有效私有配置保存在自己控制的备份位置，不要上传真实口令或私钥。
+
+## 卸载与完整清理
+
+默认卸载只移除程序、管理命令与服务，保留配置、证书、状态目录以及专用非登录用户：
+
+```bash
+sudo qianli-hy2 uninstall
+```
+
+确认不再需要这些私有资料时，才执行：
+
+```bash
+sudo qianli-hy2 uninstall --purge
+```
+
+`--purge` 仅允许用于卸载，删除范围限定为本项目固定的专属目录。若已经做过默认卸载，本地管理命令也已被移除；可以重新下载本脚本，再运行 `sudo bash qianli-hy2-install.sh uninstall --purge`。不要把 `--yes` 随手加到清理命令中。
+
+## 验证范围
+
+在 Linux 开发环境中运行：
+
+```bash
+bash -n install.sh
+shellcheck --severity=warning install.sh tests/smoke.sh
+bash tests/smoke.sh
+```
+
+隔离测试只调用参数校验、发布元数据选择、临时目录中的配置生成和 dry-run，不执行服务器安装。自动检查见 [GitHub Actions](https://github.com/li23434/qianli-hysteria2-guide/actions/workflows/verify.yml)。
+
+开发检查与真实服务器验收是两回事。语法、帮助/参数解析、`--dry-run`、隔离样例中的配置生成、版本元数据校验或故障分支测试，只能验证这些对应代码路径，不能替代真实 systemd、ACME、UDP 网络与客户端端到端连接。
+
+**当前尚未在用户真实 VPS 上执行安装，没有真实节点、速度测试或生产可用性实测结论。** 安装后应核对 DNS、80/TCP 验证条件、实际 UDP 入站、服务日志和客户端请求结果。`configs/` 中保留的是脱敏参考文件；实际使用以脚本生成的私有配置为准。
+
+## 归属与参考
+
+- 安装编排与项目维护：**qianli**
+- Hysteria 程序与协议：[官方项目](https://github.com/HyNetworks/hysteria)
+- 配置字段：[官方服务端文档](https://v2.hysteria.network/docs/advanced/Full-Server-Config/)、[官方客户端文档](https://v2.hysteria.network/docs/advanced/Full-Client-Config/)
+
+本项目不调用官方 `get.hy2.sh`，也不调用或镜像第三方一键安装器。官方软件、文档与其他被引用项目仍分别属于各自原作者。
