@@ -1,0 +1,13 @@
+# qianli tutorial example — replace all placeholders before deployment.
+# Alternative official-install route only; do not overlay a third-party script config.
+listen: :443
+
+acme:
+  domains:
+    - hy2.example.com
+  email: admin@example.com
+  ca: letsencrypt
+
+auth:
+  type: password
+  password: REPLACE_WITH_YOUR_OWN_LONG_RANDOM_PASSWORD
