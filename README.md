@@ -3,9 +3,11 @@
 作者与维护：**qianli**  
 脚本入口：[install.sh](install.sh)
 
-这是 qianli 独立编写的 Bash 安装与管理脚本，不是原教程的改名版，也不是调用其他安装器的包装脚本。它自行准备依赖、下载并校验官方 Hysteria 二进制、生成配置和独立 systemd 服务，再提供更新、状态、日志、客户端配置与卸载入口。
+本仓库维护 qianli 编写的 Bash 安装与管理编排：准备依赖、下载并校验官方 Hysteria 二进制、生成配置和独立 systemd 服务，并提供更新、状态、日志、客户端配置与卸载入口。这里的安装编排不包含 Hysteria 协议、核心程序或官方文档的开发归属。
 
-Hysteria 协议与程序仍来自 [官方项目 HyNetworks/hysteria](https://github.com/HyNetworks/hysteria)。本仓库不把官方软件称为 qianli 自研，也不附带其他项目的安装脚本副本。
+Hysteria 协议与程序来自 [官方项目 HyNetworks/hysteria](https://github.com/HyNetworks/hysteria)，配置字段参考其官方文档。本仓库不把这些第三方成果称为 qianli 自研；历史教程参考、第三方归属及上游许可见文末和 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+
+**当前未授予 qianli 原创安装编排代码及原创文档面向第三方的通用复用许可。** 各第三方内容依各自许可；第三方说明仅确认来源并保留上游声明，不是为本仓库整体授权，也不将他人作品重新授权。
 
 ## 一行打开安装菜单
 
@@ -202,8 +204,12 @@ bash tests/integration.sh
 
 ## 归属与参考
 
-- 安装编排与项目维护：**qianli**
+- 安装与管理编排、项目维护：**qianli**；不将 Hysteria 协议、核心程序或官方文档归为本项目自研。
 - Hysteria 程序与协议：[官方项目](https://github.com/HyNetworks/hysteria)
 - 配置字段：[官方服务端文档](https://v2.hysteria.network/docs/advanced/Full-Server-Config/)、[官方客户端文档](https://v2.hysteria.network/docs/advanced/Full-Client-Config/)
+- 历史教程参考：[haiy.space · Hysteria 2 VPS](https://haiy.space/posts/hysteria-2-vps/)，曾用于选题及第三方脚本入口参考。
+- 历史第三方脚本入口：[flame1ce/hysteria2-install](https://github.com/flame1ce/hysteria2-install)。该项目不是 qianli 编写的安装器；当前脚本未镜像或调用它。
 
-本项目不调用官方 `get.hy2.sh`，也不调用或镜像第三方一键安装器。官方软件、文档与其他被引用项目仍分别属于各自原作者。
+上述历史参考已在[早期 README](https://github.com/li23434/qianli-hysteria2-guide/blob/5d1a8056e4a0adaabc50bc7da890fe7c85da0b15/README.md#L186-L197) 中记录，现保留来源关系以便核对。这些记录不作“已复制相关代码”的认定，也不代表对参考作品重新许可。
+
+当前安装编排直接获取官方 Hysteria Release，不调用官方 `get.hy2.sh`，也不调用或镜像上述第三方一键安装器。官方软件、文档与参考作品仍分别归其权利人所有；具体来源、Hysteria 上游 MIT 许可全文及其适用范围见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
